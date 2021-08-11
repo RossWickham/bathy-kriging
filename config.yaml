@@ -1,0 +1,8 @@
+data:
+- name: R06
+  fileName: R06/Terrain6.tif
+- name: R07
+  fileName: R07/Terrain7.tif
+- name: R08
+  fileName: R08/Terrain8.tif
+dataDir: _data
