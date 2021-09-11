@@ -5,6 +5,21 @@
 # Session Data files
 .RData
 
+# Raster
+.tiff
+.tif
+,tif,aux,xml
+.ovr
+.xml
+
+# ESRI shapefile
+.cpg
+.dbf
+.prj
+.apj
+.shp
+.shx
+
 # User-specific files
 .Ruserdata
 
