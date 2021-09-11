@@ -106,15 +106,20 @@ plot(r)
 
 
 # Extract initial XYZ, coords from raw raster [X,Y,Z]
-rXYZ <- rawR %>% coordinates() %>% as.data.frame() %>% 
+rXYZ <- 
+  rawR %>% 
+  coordinates() %>% 
+  as.data.frame() %>% 
   mutate(z = values(r),
          i = rep(1:ncol(r), times = nrow(r)),
-         j = rep(1:nrow(r), each = ncol(r)))
-names(rXYZ) <- c("x","y","z", "i", "j")
+         j = rep(1:nrow(r), each = ncol(r))) %>%
+  setNames(c("x","y","z", "i", "j"))
 
 # Extracting polygon XY [X,Y]
-pXY <- rawFill@polygons[[1]]@Polygons[[1]]@coords %>% as.data.frame()
-names(pXY) <- c("x","y")
+pXY <- 
+  rawFill@polygons[[1]]@Polygons[[1]]@coords %>% 
+  as.data.frame() %>%
+  setNames(c("x","y"))
 
 # Selecting those points of raster within fill polygon and indicating
 #   them as points to iteratively compute kNN
