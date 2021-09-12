@@ -309,12 +309,18 @@ initializeXYZ <-
     xyz
   }
 
+getShpLineCoords <- function(shp){
+  coordinates(shp)[[1]][[1]] %>%
+    as.data.frame() %>%
+    setNames(c("x","y"))
+}
+
 ### Testing ------------------------------------------------------------------
 
 
 # TESTING 
 # 
-if(T){
+if(F){
   # Crop the terrain to just a subset to speed up calc testing
   testExtent <- extent(-5720000, -5700000, 9190000, 9192000) # xmin, xmax, ymin, ymax
   rawRaster <- r <- crop(x = rawRaster, y = testExtent)
@@ -348,233 +354,247 @@ if(T){
 
 # set.seed(100)
 
-crsString <- crs(rawRaster)
+crsObj <- crs(rawRaster)
 
 xyz <- initializeXYZ(rawRaster, rawSounding, wse)
 
+# Ensure centerline same projection as raster
+rawCL <- spTransform(rawCL, crsObj)
+
 rasterFromXYZ(xyz[, c("x","y","z")]) %>%
   plot()
-
+rawCL %>% lines()
 
 ### Bathymetric Lateral Interpolation ----------------------------------------
+
+
+#
+# TODO
+# - apply smoothing on interpolated cells after finish compute
+# - add more vertices in centerline
+#
+
+
 if(T){
-
-
-
-}
-### Bottom Up ----------------------------------------------------------------
-# Compute from the lowest points up, selecting cells with NA 
-#   surrounding values
-
-
-# Smooth non-NA cells first
-# xyz <- 
-#   xyz %>%
-#   knnSmoothXYZ()
-
-
-## TODO
-# Add more inteligent interpolation
-#  only use cells within x distance for interpolation
-#  inverse distance method
-#  interpolate all cells at once via FNN, assign NA if no close matches 
-#    within x specified distance for interpolation
-
-if(F){
-
-maxDist <- 100  # feet
-
-it <- 1
-maxIts <- 1000
-while(T){
   
-  interpIndices <- xyz$interpIndex
-  
-  kDist <- knnx.dist(data =  xyz[!interpIndices, c("x","y")],
-                     query = xyz[, c("x","y")],
-                     k=k)[,-1]
-  minDists <-
-    apply(X = kDist,
-          MARGIN = 1,
-          FUN = min)
-  
-  # Determine compute order
-  interpIndices <- 
-    is.na(xyz$z) |
-    xyz$z == 0 &
-    minDists < maxDist
-  
-  if(sum(interpIndices) == 0){
-    cat("\nNo more indexes to interpolate, escaping")
-    break
+  #'
+  #' Create the 'X' matrix of points from xyz data.frame
+  #'
+  getX <- function(xyz){
+    matrix(data = c(xyz$x, xyz$y), nrow = 2, byrow = 2)
   }
   
-  # Get kNN indices and distances for cell locations to compute 
-  #   in this iteration
-  zValues <- xyz$z[!xyz$interpIndex]
-  knnQuery <- 
-    get.knnx(data = xyz[!interpIndices, c("x","y")],
-             query = xyz[interpIndices, c("x","y")],
-             k=k)
-  # Pull the values of nearest neighbors for each index
-  kValues <- 
-    apply(X = knnQuery$nn.index,
-          MARGIN = 1,
-          FUN = function(x){
-            zValues[x]
-          }) %>%
-    t()
+  #'
+  #' Create a rotational matrix given a vertical slope
+  #'   i.e., the horizontal:vertical ration is 1:s
+  #'
+  getR <- function(s){
+    theta = atan(s)
+    matrix(c(cos(theta), sin(theta), -sin(theta), cos(theta)), nrow = 2)
+  }
   
-  # Convert the distances to weights
-  kWeights <- 
-    apply(knnQuery$nn.dist,
-          MARGIN = 1,
-          FUN = function(x){
-            out <- 1/x^2
-            out[x > maxDist] <- 0
-            out
-            # 1/x^2
-          }) %>%
-    t()
-  # Normalizing matrix to use as numerator
-  kNormalize <- 
-    apply(kWeights,
-          MARGIN = 1, 
-          FUN = function(x){
-            1/rep(sum(x),length(x))
-          }) %>%
-    t()
+  #'
+  #' Create the shift matrix to be applied to the 'X' matrix
+  #'
+  getS <- function(xShift, yShift, nPts){
+    matrix(c(rep(-xShift, nPts), rep(-yShift, nPts)), nrow = 2, byrow = T)
+  }
   
+  #'
+  #' Compute current centerline slope from index value and centerline
+  #'
+  computeCLSlope <- function(ix, xlCL){
+    with(xlCL,
+         1/2*(
+           (y[ix+1] - y[ix])/(x[ix+1] - x[ix]) + 
+             (y[ix] - y[ix-1])/(x[ix] - x[ix-1])
+         )
+    )
+  }
   
-  # Computing estimates
-  xyz$z[interpIndices] <- 
-    ((kValues * kWeights) *
-       kNormalize) %>%
-    apply(MARGIN = 1,
-          FUN = sum)
+  #'
+  #' Create a matrix structured where top row is x-values,
+  #'   second row is y-values.
+  #'
+  getXYMatrix <- function(xyz){
+    matrix(c(xyz$x, xyz$y), nrow = 2, byrow = T) 
+  }
   
-  
-  interpIndices[apply(kWeights,1,max) ==0] <- F
-  
-  # Update indices that need to be interpolated
-  xyz$interpIndex[interpIndices] <- F
-  
-  if(sum(xyz$interpIndex)==0) break
-  cat(sprintf("\nits = %5g\t# cells remaining:\t%10g", it, sum(xyz$interpIndex)))
-  it <- it + 1
-  if(it > maxIts) break
-}
-
-
-rasterFromXYZ(xyz[, c("x","y","z")]) %>%
-  plot()
-
-if(file.exists(saveFileName)) file.remove(saveFileName)
-
-xyz[, c("x","y","z")] %>%
-  rasterFromXYZ(crs=crsString) %>%
-  writeRaster(filename = saveFileName, overwrite=T)
-}
-
-### Slow Averaging -----------------------------------------------------------
-# Slowly iterating through the cells selected for interpolation that have
-#   at least one valued (i.e., non-NA) cell adjacent to them, while also 
-#   keeping track of the order of approximation.  Iteratively pass though
-#   the order of cells to approximat until a desired difference in change 
-#   is achieved using a while loop.
-
-if(F){
-  
-  maxErr <- 0.1
-  maxIt <- 1000
-  xyz$err <- 0
-  # Make an initial pass through the raster locations to determine
-  #   the order in which to interpolate the gridded points
-  
-  
-  # Iterating through each point in the WSE index
-  while(abs(max(xyz$err)) > maxErr & it < maxIt){
-    for(it in 1:maxIt){
-      for(k  in which(xyz$wseIndex)){
-        
-      }
+  #'
+  #' Find a set of equally spaced points on a line given two vertices
+  #'   defining the end points 
+  #'
+  #' @param xy data.frame with two columns for x and y, and two
+  #'             rows defining
+  #' @param d  numeric, atomic defining spacing of points to
+  #'             to define along line
+  #' @return   data.frame with two columns for x and y, 
+  #'             defining an sequence of evenly-spaced (d) points
+  #'             between the extents of the input xy data.frame
+  #'
+  getEqualSpacePtsOnLine <- function(xy, d){
+    # Compute a linear model fit from xy
+    lmFit <- 
+      xy %>%
+      lm(y ~ x, .)
+    # Get the slope of the line in radians
+    theta <- 
+      lmFit %>%
+      coefficients() %>%
+      last() %>%
+      atan()
+    # Compute the horizontal (x) distance given the 
+    #   hypotenuse (d).  cos(theta) = d/x_dist =>
+    x_dist <- d*cos(theta) %>% abs()
+    # Generate a sequence from start to end of x-values in xy
+    if(diff(range(xy$x)) < x_dist){
+      return(
+        # Return mean of x and y values if equal spacing in x-direction
+        #   is less than the extent defined in xy input data.frame
+        xy %>% sapply(mean) %>% t() %>% as.data.frame()
+      )
+    }else{
+      # Get a sequence between extents of xy's x values, starting at x_dist, 
+      #   and compute the y-values using the linear model
+      xValues <- seq(from = x_dist, to = max(xy$x), by = x_dist)
+      yValues <- predict.lm(object = lmFit, newdata = data.frame(x = xValues))
+      return(
+        data.frame(
+          x = xValues,
+          y = yValues
+        )
+      )
     }
   }
   
-}
-
-
-### Kriging ------------------------------------------------------------------
-# Try kriging, following example here:
-# https://rpubs.com/nabilabd/118172
-
-if(F){
-  coordinates(modXYZ) = ~x+y
-  # calculates sample variogram values
-  lzn.vgm <- variogram(object = log(z)~x+y, data = modXYZ[!interpIndex,])  
-  lzn.fit <- fit.variogram(lzn.vgm, model=vgm(1, "Mat", 900, 1)) # fit model
-  plot(lzn.vgm, lzn.fit)
-  
-  # Kriging
-  lzn.kriged <- krige(log(z)~x+y, bathyXYZ, wseXYZ, model=lzn.fit)
-  
-  modXYZ$z[wseIndex] <- exp(as.numeric(lzn.kriged@data$var1.pred))
-  
-  # If this looks good, then might want to smooth using knn
-  rgl::plot3d(xyz[!bathyIndex & !wseIndex,])
-  points3d(modXYZ, col="red")
-  
-}
-### kNN ----------------------------------------------------------------------
-
-if(F){
-  
-  # Using the best WSE to fit the data
-  # Finding the nearest raster point's index in bathyXYZ
-  #   corresponding to each soundingXYZ
-  knnQuery <- knnx.index(data = xyz[c("x","y")],
-                         query = soundingXYZ[c("x","y")],
-                         k=1) %>% as.numeric()
-  
-  # Updating which points need interpolation, excluding sounding points
-  interpIndex[knnQuery] <- F 
-  
-  
-  ## TODO 
-  # interpolate a WSE raster based on the sounding points that
-  #   overlap with bathy XSecs.  WSE = bathy + sounding depth
-  # Interpolate between known WSEs to fill in the raster
-  
-  # Assigning those raster values to the corresponding
-  #   sounding depth
-  # modXYZ$z[knnQuery] <- bestW - soundingXYZ$z
-  
-  # Subtracting soundings from WSE to estimate bathymetric elevations
-  modXYZ$z[knnQuery] <- modXYZ$z[knnQuery] - soundingXYZ$z
-  
-  # Iteratively interpolating, starting by first only
-  #   informing interpolation with valid terrain/bathymetry points
-  modXYZ$z[interpIndex] <- 
-    knn.reg(train = modXYZ[!interpIndex, c("x","y")],
-            test = modXYZ[interpIndex, c("x","y")],
-            y = modXYZ[!interpIndex, "z"] %>% as.data.frame(),
-            k = k)$pred
-  
-  # Smoothing bathymetry points
-  for(i in 1:nSmoothingIts){
-    cat(sprintf("\n%g", i))
-    modXYZ$z[interpIndex] <-
-      knn.reg(train = modXYZ[!interpIndex, c("x","y")],
-              test = modXYZ[interpIndex, c("x","y")],
-              y = modXYZ[!interpIndex, "z"] %>% as.data.frame(),
-              k = k)$pred
+  #'
+  #' Generate a sequence of points at which to apply the 
+  #'   inpterolation algorithm.  Returns a dataframe
+  #'   with columns
+  #'
+  #' @param clXY data.frame of the centerline from which to apply
+  #'              interpolation with columns for x and y values
+  #' @param a  (Optional) numeric defining the rotation angle to increment
+  #'             when interpolating at corners
+  #' @return a new data.frame with columns defining interpolation points with
+  #'           columns for x-values, y-values, slope, and theta (radians) 
+  getInterpolationPOints(clXY, a = 0.1){
+    
+    # Compute data.frame with slopes and theta values associated 
+    #   with each line segment for use later
+    
+    # Between each vertex, generate a sequence of points
+    
+    # - Extract two-row xy data.frame, 
+    # - pull the points
+    # - compute a slope
+    # - compute a theta = atan(slope)
+    #
+    
+    # At each corner (non-last or non-first vertice), create a set
+    #   of points rotating 'a' radians from the slope of the previous
+    #   line segment to the slope of the next.
+    
+    # - use slope and theta values from above computed segment data.frame
+    # - determine the angle of rotation from the smallest angle between
+    #     previous and next slopes defining vertice
+    # - generate a sequence of angles between the two
+    # - assign angles to new data.frame using fixed x-y values of corner
+    
+    NULL
   }
   
+  xlCL <- getShpLineCoords(rawCL)
   
-  rgl::plot3d(xyz[!bathyIndex & !wseIndex,])
-  points3d(modXYZ, col="red")
-  points3d(bathyXYZ, col="green", size=2)
+  l_buff <- 500
+  t_buff <- 4000
   
-  rasterFromXYZ(modXYZ, crs=crs(r)) %>%
+  for(i in 2:(nrow(xlCL)-1)){
+    
+    
+    # Reserve a dummy set of points for manipulation
+    mXYZ <- xyz
+    
+    # Compute centerline slope
+    s <- computeCLSlope(i, xlCL)
+    
+    # Get the rotational matrix
+    R <- getR(s = s)
+    
+    # Get the shift matrix
+    S <- getS(xShift = xlCL$x[i], yShift = xlCL$y[i], nPts = nrow(mXYZ))
+    
+    # Shift and rotate
+    mXYZ[, c("x","y")] <-t(R %*% (getXYMatrix(mXYZ) + S))
+    
+    # Select points within l_buff and t_buff rectangle about newly defined 
+    #   origin for interpolation
+    ptsInInterpRectanlge <- 
+      mXYZ$x > -l_buff & 
+      mXYZ$x < l_buff &
+      mXYZ$y > -t_buff &
+      mXYZ$y < t_buff
+    if(sum(ptsInInterpRectanlge) == 0) next
+    
+    sXYZ <- mXYZ[ptsInInterpRectanlge,]
+    
+    # plot(sXYZ[, c("y","z")])
+    
+    # Add checks for 1) some non-NA points, 2) no NA points
+    if(sum(is.na(sXYZ$z)) < 50) next
+    if(!any(is.na(sXYZ$z))) next
+    
+    # Use good points in this subset of points to define the bad points
+    knnQuery <- 
+      get.knnx(data = sXYZ[!is.na(sXYZ$z), c("x","y")],
+               query = sXYZ[is.na(sXYZ$z), c("x","y")],
+               k = 3)
+    
+    zValues <- sXYZ$z[!is.na(sXYZ$z)]
+    # Pull the values of nearest neighbors for each index
+    kValues <- 
+      apply(X = knnQuery$nn.index,
+            MARGIN = 1,
+            FUN = function(x){
+              zValues[x]
+            }) %>%
+      t()
+    
+    # Convert the distances to weights
+    kWeights <- 
+      apply(knnQuery$nn.dist,
+            MARGIN = 1,
+            FUN = function(x){
+              1/x^2
+            }) %>%
+      t()
+    # Normalizing matrix to use as numerator
+    kNormalize <- 
+      apply(kWeights,
+            MARGIN = 1, 
+            FUN = function(x){
+              1/rep(sum(x),length(x))
+            }) %>%
+      t()
+    
+    # Computing estimates
+    sXYZ$z[is.na(sXYZ$z)] <- 
+      ((kValues * kWeights) *
+         kNormalize) %>%
+      apply(MARGIN = 1,
+            FUN = sum)
+    
+    # Assign back to master
+    xyz$z[ptsInInterpRectanlge] <- sXYZ$z
+    
+    
+  }
+  
+  rasterFromXYZ(xyz[, c("x","y","z")]) %>%
+    plot()
+  
+  cat(sprintf("\n\nWriting raster to here:\n\t%s", saveFileName))
+  xyz[, c("x","y","z")] %>%
+    rasterFromXYZ(crs=crsObj) %>%
     writeRaster(filename = saveFileName, overwrite=T)
 }
