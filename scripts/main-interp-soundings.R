@@ -50,6 +50,13 @@ k = 50
 # Number of smoothing k-NN iterations
 nSmoothingIts <- 4
 
+
+# Parameters for bathyetric lateral interpolation
+l_buff <- 1000
+t_buff <- 3000
+
+interpAtCorners = F
+
 ### Load ----------------------------------------------------------------------
 
 rawRaster <- r <- rFileName %>% raster()
@@ -58,7 +65,8 @@ rawRaster <- r <- rFileName %>% raster()
 rawSounding <- s <- shpFileName %>% readOGR() %>% spTransform(CRSobj = crs(r))
 
 # Load centerline
-rawCL <- readOGR(dsn = "data\\working\\R06\\R06_cl.shp")
+# shpCL <- readOGR(dsn = "data\\working\\R06\\R06_cl.shp")
+shpCL <- readOGR(dsn = "data\\raw\\R06\\R06_pt.shp")
 
 ### Functions ----------------------------------------------------------------
 
@@ -262,14 +270,9 @@ knnSmoothXYZ <- function(xyz, k=10){
 }
 
 initializeXYZ <- 
-  function(rawRaster, rawSounding, wse){
+  function(rawRaster, rawSounding = NULL, wse){
     
-    # Extracting xyz location of bathymetric points
-    bathyXYZ <-
-      rawSounding %>% 
-      as.data.frame() %>% 
-      dplyr::select(c("coords.x1","coords.x2", "coords.x3")) %>%
-      rename(x = coords.x1, y = coords.x2, z = coords.x3)
+    
     
     # Characterize points using 'wse', extracting xyz, renaming columns
     xyz <-
@@ -284,27 +287,32 @@ initializeXYZ <-
         bathyIndex = F
       )
     
-    # Finding the nearest raster points' index corresponding
-    #   to the bathymetric points, update those points with z-values
-    #   and excluding them from interpolation
-    knnQuery <- 
-      knnx.index(data = xyz[c("x","y")],
-                 query = bathyXYZ[c("x","y")],
-                 k = 1) %>% 
-      as.numeric()
-    
-    # Use tidyverse syntax here to create/manipulte column info
-    xyz$z[knnQuery] <- xyz$z[knnQuery] - bathyXYZ$z
-    xyz$interpIndex[knnQuery] <- xyz$wseIndex[knnQuery] <- F
-    xyz$bathyIndex[knnQuery] <- T
+    if(!is.null(rawSounding)){
+      # Extracting xyz location of bathymetric points
+      bathyXYZ <-
+        rawSounding %>% 
+        as.data.frame() %>% 
+        dplyr::select(c("coords.x1","coords.x2", "coords.x3")) %>%
+        rename(x = coords.x1, y = coords.x2, z = coords.x3)
+      
+      # Finding the nearest raster points' index corresponding
+      #   to the bathymetric points, update those points with z-values
+      #   and excluding them from interpolation
+      knnQuery <- 
+        knnx.index(data = xyz[c("x","y")],
+                   query = bathyXYZ[c("x","y")],
+                   k = 1) %>% 
+        as.numeric()
+      
+      # Use tidyverse syntax here to create/manipulte column info
+      xyz$z[knnQuery] <- xyz$z[knnQuery] - bathyXYZ$z
+      xyz$interpIndex[knnQuery] <- xyz$wseIndex[knnQuery] <- F
+      xyz$bathyIndex[knnQuery] <- T
+      
+    }
     
     # Setting interpolation cells to NA
     xyz$z[xyz$interpIndex] <- NA
-    
-    xyz[,c("x","y","z")] %>%
-      rasterFromXYZ() %>%
-      plot()
-    points(bathyXYZ[, c("x","y")])
     
     xyz
   }
@@ -359,11 +367,11 @@ crsObj <- crs(rawRaster)
 xyz <- initializeXYZ(rawRaster, rawSounding, wse)
 
 # Ensure centerline same projection as raster
-rawCL <- spTransform(rawCL, crsObj)
+shpCL <- spTransform(shpCL, crsObj)
 
 rasterFromXYZ(xyz[, c("x","y","z")]) %>%
   plot()
-rawCL %>% lines()
+shpCL %>% lines()
 
 ### Bathymetric Lateral Interpolation ----------------------------------------
 
@@ -420,6 +428,20 @@ if(T){
     matrix(c(xyz$x, xyz$y), nrow = 2, byrow = T) 
   }
   
+  #' 
+  #' Compute the slope between the first and second point of a 
+  #'   two-row data.frame with columns for 'x' and 'y'
+  #'   
+  getSlope <- function(xy){
+    if(abs(diff(xy$x)) < 1E-4){
+      return(pi/2)
+    }else{
+      return(
+        atan(diff(xy$y)/diff(xy$x))
+      )
+    }
+  }
+  
   #'
   #' Find a set of equally spaced points on a line given two vertices
   #'   defining the end points 
@@ -433,19 +455,12 @@ if(T){
   #'             between the extents of the input xy data.frame
   #'
   getEqualSpacePtsOnLine <- function(xy, d){
-    # Compute a linear model fit from xy
-    lmFit <- 
-      xy %>%
-      lm(y ~ x, .)
     # Get the slope of the line in radians
-    theta <- 
-      lmFit %>%
-      coefficients() %>%
-      last() %>%
-      atan()
+    theta <- xy %>% getSlope()
     # Compute the horizontal (x) distance given the 
     #   hypotenuse (d).  cos(theta) = d/x_dist =>
     x_dist <- d*cos(theta) %>% abs()
+    y_dist <- d*sin(theta) %>% abs()
     # Generate a sequence from start to end of x-values in xy
     if(diff(range(xy$x)) < x_dist){
       return(
@@ -456,8 +471,8 @@ if(T){
     }else{
       # Get a sequence between extents of xy's x values, starting at x_dist, 
       #   and compute the y-values using the linear model
-      xValues <- seq(from = x_dist, to = max(xy$x), by = x_dist)
-      yValues <- predict.lm(object = lmFit, newdata = data.frame(x = xValues))
+      xValues <- seq(from = min(xy$x), to = max(xy$x), by = x_dist)
+      yValues <- seq(from = min(xy$y), to = max(xy$y), by = y_dist)
       return(
         data.frame(
           x = xValues,
@@ -469,16 +484,27 @@ if(T){
   
   #'
   #' Generate a sequence of points at which to apply the 
-  #'   inpterolation algorithm.  Returns a dataframe
+  #'   interpolation algorithm.  Returns a data.frame
   #'   with columns
   #'
-  #' @param clXY data.frame of the centerline from which to apply
-  #'              interpolation with columns for x and y values
+  #' @param xyCL   data.frame of the centerline from which to apply
+  #'                 interpolation with columns for x and y values
+  #' @param l_buff atomic numeric defining the lateral distance
+  #'                 (e.g., downstream)  to on either side of an 
+  #'                 interpolation's cross-section
+  #' @param t_buff atomic numeric defining the transverse distance
+  #'                 (e.g., cross-stream) of each interpolation
+  #'                 cross-section 
   #' @param a  (Optional) numeric defining the rotation angle to increment
   #'             when interpolating at corners
+  #'             
   #' @return a new data.frame with columns defining interpolation points with
   #'           columns for x-values, y-values, slope, and theta (radians) 
-  getInterpolationPOints(clXY, a = 0.1){
+  getInterpolationPoints <- function(xyCL,
+                                     l_buff = mean(sapply(xyCL,diff)),
+                                     t_buff = l_buff,
+                                     a = 0.4,
+                                     interpAtCorners = T){
     
     # Compute data.frame with slopes and theta values associated 
     #   with each line segment for use later
@@ -495,37 +521,82 @@ if(T){
     #   of points rotating 'a' radians from the slope of the previous
     #   line segment to the slope of the next.
     
+    # First, compute bisecting angle between consecutive vertices
+    cornerConfig <- 
+      xyCL %>%
+      split(1:nrow(xyCL)) %>%
+      map(
+        .f = function(inDf, a = a){
+          data.frame(x = inDf$x, y = inDf$y, a = seq(0,2*pi, by = a))
+        }
+      ) %>%
+      bind_rows()
+    
     # - use slope and theta values from above computed segment data.frame
     # - determine the angle of rotation from the smallest angle between
     #     previous and next slopes defining vertice
     # - generate a sequence of angles between the two
     # - assign angles to new data.frame using fixed x-y values of corner
+    alongLineXYList <- list()
+    for(i in 2:(nrow(xyCL)-1)){
+      
+      alongLineXYList[[i-1]] <- 
+        xyCL[(i-1):i,] %>%
+        # Get xy points along line, defined every 1.9*l_buff
+        getEqualSpacePtsOnLine(d = 1.9*l_buff) %>%
+        # Compute center-line slope, add on to data.frame
+        mutate(
+          a = computeCLSlope(i, xyCL)
+        )
+    }
+    lineConfig <- 
+      alongLineXYList %>%
+      bind_rows()
     
-    NULL
+    if(interpAtCorners){
+      return(
+        cornerConfig %>%
+          bind_rows(lineConfig)
+      )
+    }else{
+      return(
+        lineConfig
+      )
+    }
   }
   
-  xlCL <- getShpLineCoords(rawCL)
+  ptInterpConfig <- 
+    getShpLineCoords(shpCL) %>%
+    getInterpolationPoints(l_buff = l_buff,
+                           t_buff = t_buff,
+                           interpAtCorners = interpAtCorners)
   
-  l_buff <- 500
-  t_buff <- 4000
+  # l_buff <- 500
+  # t_buff <- 4000
   
-  for(i in 2:(nrow(xlCL)-1)){
+  for(i in 1:nrow(ptInterpConfig)){
     
     
     # Reserve a dummy set of points for manipulation
     mXYZ <- xyz
     
-    # Compute centerline slope
-    s <- computeCLSlope(i, xlCL)
+    # Shift points
+    #shiftPoints <- function(xyza){
     
     # Get the rotational matrix
-    R <- getR(s = s)
+    R <- getR(s = ptInterpConfig$a[i])
     
     # Get the shift matrix
-    S <- getS(xShift = xlCL$x[i], yShift = xlCL$y[i], nPts = nrow(mXYZ))
+    S <- getS(xShift = ptInterpConfig$x[i],
+              yShift = ptInterpConfig$y[i],
+              nPts = nrow(mXYZ))
     
     # Shift and rotate
-    mXYZ[, c("x","y")] <-t(R %*% (getXYMatrix(mXYZ) + S))
+    mXYZ[, c("x","y")] <- t(R %*% (getXYMatrix(mXYZ) + S))
+    
+    #} # end function, shiftPoints
+    
+    # Subset by points in interpolation rectangle
     
     # Select points within l_buff and t_buff rectangle about newly defined 
     #   origin for interpolation
@@ -536,13 +607,18 @@ if(T){
       mXYZ$y < t_buff
     if(sum(ptsInInterpRectanlge) == 0) next
     
+    # Subset by points that can be used for interpolation (both NA and non-NA)
     sXYZ <- mXYZ[ptsInInterpRectanlge,]
     
-    # plot(sXYZ[, c("y","z")])
     
-    # Add checks for 1) some non-NA points, 2) no NA points
-    if(sum(is.na(sXYZ$z)) < 50) next
-    if(!any(is.na(sXYZ$z))) next
+    
+    
+    # interpNAPoints <- function(sXYZ){
+    
+    # Checks for: 1) enough non-NA points, 2) no NA points, 3) all NA points
+    if(sum(!is.na(sXYZ$z)) < 12) next
+    if(all(!is.na(sXYZ$z))) next
+    if(all(is.na(sXYZ$z))) next
     
     # Use good points in this subset of points to define the bad points
     knnQuery <- 
@@ -584,11 +660,22 @@ if(T){
       apply(MARGIN = 1,
             FUN = sum)
     
+    
+    # } # End function, interpNAPoints
+    
     # Assign back to master
     xyz$z[ptsInInterpRectanlge] <- sXYZ$z
     
-    
   }
+  
+  
+  
+  # Applying a k-NN smoothing method
+  xyz$z <- 
+    knn.reg(train = xyz[,c("x","y")],
+            y = xyz$z,
+            k = 50) %>%
+    pluck("pred")
   
   rasterFromXYZ(xyz[, c("x","y","z")]) %>%
     plot()
