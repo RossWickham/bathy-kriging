@@ -1,0 +1,22 @@
+Flow Title=steady mapping
+Program Version=5.03
+Number of Profiles= 8 
+Profile Names=0.5,0.2,0.1,0.05,0.02,0.01,0.005,PF8
+River Rch & RM=Snake River,Reach 07        ,69.4768 
+    5000    5000    5000    5000    5000    5000    5000    5000
+Boundary for River Rch & Prof#=Snake River,Reach 07        , 1 
+Up Type= 0 
+Dn Type= 3 
+Dn Slope=0.005
+DSS Import StartDate=
+DSS Import StartTime=
+DSS Import EndDate=
+DSS Import EndTime=
+DSS Import GetInterval= 0 
+DSS Import Interval=
+DSS Import GetPeak= 0 
+DSS Import FillOption= 0 
+Storage Area Elev=Palouse SA      , 8 
+  491.72  491.72  491.72  491.72  491.72  491.72  491.72  491.72
+Storage Area Elev=Tucannon SA     , 8 
+  491.64  491.64  491.64  491.64  491.64  491.64  491.64  491.64

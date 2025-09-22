@@ -1,0 +1,64 @@
+Proj Title=R08_RASModl_CRT2016
+Current Plan=p01
+Default Exp/Contr=0.3,0.1
+English Units
+Geom File=g01
+Flow File=f01
+Plan File=p01
+Y Axis Title=Elevation
+X Axis Title(PF)=Main Channel Distance
+X Axis Title(XS)=Station
+BEGIN DESCRIPTION:
+This evaluation completed for CRT Damages Prevented (DP), in Aug 2014, by Jonathan Petersen (NWW).
+
+CRT Iteration 4 Studies in 2016 continued to use this model  Gene Spangrude (NWW)
+
+The original model data sets were obtained from this location:
+
+\\137.161.92.13\crt_egis\CRT2014\Technical_Teams\Hydrology\Hydraulics
+
+\RAS_Models_Iteration4\RAS_Models
+
+Several of the Geometric Data Sets and Plans which were located in 
+
+that folder have been deleted from the Iteration 4 RAS Model Projects; 
+
+since they were not directly relevant to the current studies.
+
+If access to this information is desired/required, refer to the 
+
+location referenced above to access the data.
+
+HTAB Increments optimized as per prescribed methodology for CRT HECRAS Team
+
+Location of DSS file used as input file for 2016 studies:
+
+\\137.161.92.13\crt_egis\CRT2014\Technical_Teams\Hydrology\Hydraulics
+
+\RAS_Models_Iteration4\RAS_Models\Flow-Damage_Curves\Stress_Testing
+
+\Data
+
+Name of DSS File is:  TC_3NCS_Metrics_2016-02-12_1236.dss
+
+
+This model was put together by McMillen-llc as part of Task Order 11 for the Walla Walla District of the Corps of Engineers. This project file contains Reach 08 of the Snake River which is defined as starting below Little Goose Dam and ending at the tailwater of Lower Granite Dam. Engineers that worked on this project were George Robison and Chris Runyan. Terrian data for this model consisted of 1m DEM data for overbank/floodplain areas and surveyed bathymetric data for channel geometry. All stream characteristics imported from HEC-GeoRAS were digitized over aerial photography. All data used in the model development was projected with a horizontal datum of United States Geological Survey (USGS) Albers, 1983 North American Datum. The  vertical datum used was North American Vertical Datum of 88 (NAVD 88). All horizontal and vertical units were in United States (US) feet.
+END DESCRIPTION:
+DSS Start Date=
+DSS Start Time=
+DSS End Date=
+DSS End Time=
+DSS File=dss
+DSS Export Filename=
+DSS Export Rating Curves= 0 
+DSS Export Rating Curve Sorted= 0 
+DSS Export Volume Flow Curves= 0 
+DXF Filename=l:\CRT-2016\RAS-Test\R8\RAS_for_Unsteady_FIA\Reach08_HECRASModel.
+DXF OffsetX= 0 
+DXF OffsetY= 0 
+DXF ScaleX= 1 
+DXF ScaleY= 10 
+GIS Export Reach=Snake River     ,Reach08         
+GIS Export SA=Meadow Cr. SA   
+GIS Export Profiles= 1 
+       1

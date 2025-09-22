@@ -1,0 +1,18 @@
+Flow Title=Steady_mapping
+Program Version=5.03
+Number of Profiles= 8 
+Profile Names=0.5,0.2,0.1,0.05,0.02,0.01,0.005,PF8
+River Rch & RM=Snake,Reach 06        ,40.482  
+   50000   50000   50000   50000   50000   50000   50000   50000
+Boundary for River Rch & Prof#=Snake,Reach 06        , 1 
+Up Type= 0 
+Dn Type= 3 
+Dn Slope=0.001
+DSS Import StartDate=
+DSS Import StartTime=
+DSS Import EndDate=
+DSS Import EndTime=
+DSS Import GetInterval= 0 
+DSS Import Interval=
+DSS Import GetPeak= 0 
+DSS Import FillOption= 0 

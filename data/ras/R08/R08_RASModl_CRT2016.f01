@@ -1,0 +1,20 @@
+Flow Title=steady mapping
+Program Version=5.03
+Number of Profiles= 8 
+Profile Names=0.5,0.2,0.1,0.05,0.02,0.01,0.005,PF8
+River Rch & RM=Snake River,Reach08         ,106.6178
+   10000   10000   10000   10000   10000   10000   10000   10000
+Boundary for River Rch & Prof#=Snake River,Reach08         , 1 
+Up Type= 0 
+Dn Type= 3 
+Dn Slope=0.005
+DSS Import StartDate=
+DSS Import StartTime=
+DSS Import EndDate=
+DSS Import EndTime=
+DSS Import GetInterval= 0 
+DSS Import Interval=
+DSS Import GetPeak= 0 
+DSS Import FillOption= 0 
+Storage Area Elev=Meadow Cr. SA   , 8 
+  587.52  587.52  587.52  587.52  587.52  587.52  587.52  587.52
